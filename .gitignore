@@ -1,0 +1,33 @@
+@"
+# ==== Large data / models ====
+/data/
+*.pth
+*.pt
+*.bin
+*.ckpt
+*.npz
+
+# ==== Python env/cache ====
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# ==== Project outputs/logs ====
+outputs/
+logs/
+*.log
+
+# ==== Secrets / local config ====
+.env
+*.env
+
+# ==== IDE / OS ====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+"@ | Out-File -Encoding ascii .gitignore
