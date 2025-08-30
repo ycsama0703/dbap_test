@@ -1,28 +1,11 @@
 
-from pathlib import Path
-import sys
-
-if __package__ in (None, ""):
-    
-    THIS_FILE = Path(__file__).resolve()
-    PROJECT_ROOT = THIS_FILE.parents[2]          
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(PROJECT_ROOT))
-    from Asset_Pricing.utils.api import get_response
-    from Asset_Pricing.utils.io import json_data_to_df
-    from Asset_Pricing.utils.prompt_builder import build_single_prompt
-else:
-    
-    from .api import get_response
-    from .io import json_data_to_df
-    from .prompt_builder import build_single_prompt
-# --- end dual-import header ---
-
 from openai import OpenAI
 from tqdm import tqdm
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pathlib import Path
 
+import sys
 import json
 import time
 import os
@@ -33,6 +16,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+if __package__ in (None, ""):
+    THIS_FILE = Path(__file__).resolve()
+    PROJECT_ROOT = THIS_FILE.parents[1]      
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
+    
+    from utils.api import get_response
+    from utils.io import json_data_to_df
+    from utils.prompt_builder import build_single_prompt
+else:
+    
+    from .api import get_response
+    from .io import json_data_to_df
+    from .prompt_builder import build_single_prompt
+# --- end dual-import header ---
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]   
 
 def extract_json_object(text):
     """Try to extract a JSON object from free-form text.
@@ -396,7 +396,7 @@ def pipeline(
 
     #save the output
     timestamp = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d_%H%M%S")
-    output_dir = Path("outputs") / f"run_{timestamp}"
+    output_dir = PROJECT_ROOT / "outputs" / f"run_{timestamp}"   
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if fig is not None:
@@ -405,13 +405,10 @@ def pipeline(
         plt.close(fig)
 
     eval_df.to_csv(output_dir / "eval_df.csv", index=False)
-
     with open(output_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2, ensure_ascii=False, default=_jsonify)
-
     with open(output_dir / "preds_raw.json", "w", encoding="utf-8") as f:
         json.dump(preds_raw, f, indent=2, ensure_ascii=False, default=_jsonify)
-
     with open(output_dir / "prompts.json", "w", encoding="utf-8") as f:
         json.dump(prompts, f, indent=2, ensure_ascii=False, default=_jsonify)
 

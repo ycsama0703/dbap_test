@@ -75,7 +75,7 @@ def _resolve_json_path(name: str) -> Path:
     if cand1.exists():
         return cand1
 
-    # 其次找 data/
+    
     cand2 = data_dir / p.name
     if cand2.exists():
         return cand2
@@ -134,6 +134,12 @@ def json_data_to_df(name: str, align: str = "quarter_end") -> pd.DataFrame:
 
 
 if __name__ == "__main__":
+
+    '''
     df = load_all_raw_parquet("data/raw_data")
     cols = ['permno','fdate','type','me','be','profit','Gat','beta','holding','mgrno','mgrid','aum','weight']
     save_json_by_type(df, cols)
+    '''
+    data_name = 'banks.json'
+    df = json_data_to_df(data_name)
+    print(df.head(3))
