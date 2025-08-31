@@ -135,11 +135,21 @@ def json_data_to_df(name: str, align: str = "quarter_end") -> pd.DataFrame:
 
 if __name__ == "__main__":
 
-    '''
-    df = load_all_raw_parquet("data/raw_data")
+
+    # 1) 读取原始 parquet（锚到项目根，任何位置运行都OK）
+    raw_dir = PROJECT_ROOT / "data" / "raw_data"
+    print(f"[load] from: {raw_dir.resolve()}")
+    df = load_all_raw_parquet(raw_dir)
+
+    # 2) 快速体检：年份覆盖与缺口（便于确认12-13是否已补上）
+    df["fdate"] = pd.to_datetime(df["fdate"], errors="coerce")
+    years = df["fdate"].dt.year.dropna().astype(int)
+    if not years.empty:
+        y_min, y_max = int(years.min()), int(years.max())
+        full = set(range(y_min, y_max + 1))
+        missing = sorted(full - set(years.unique()))
+        print(f"[shape] {df.shape} | years {y_min}-{y_max} | missing years: {missing}")
+
+    # 3) 选择需要保存的列并按 type 写出到 <项目根>/data/json_data/
     cols = ['permno','fdate','type','me','be','profit','Gat','beta','holding','mgrno','mgrid','aum','weight']
     save_json_by_type(df, cols)
-    '''
-    data_name = 'banks.json'
-    df = json_data_to_df(data_name)
-    print(df.head(3))

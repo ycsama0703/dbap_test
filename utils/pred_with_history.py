@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import sys
+
 import json
 import time
 import os
@@ -424,8 +425,8 @@ if __name__ == "__main__":
     df = json_data_to_df(data_name)
     mgrno = 7800
     permno = 10107
-    start_date = "2012-04-01"
-    end_date = "2013-07-01"
+    start_date = "2010-04-01"
+    end_date = "2019-07-01"
     call_fn = get_response
     investor_role = inv_type
 
