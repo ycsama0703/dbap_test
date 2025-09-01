@@ -191,20 +191,19 @@ def generate_prompts_list(
     end_date: str = None,
     investor_role: str = None
 ):
-    """
-    Generate prompts for all available input pairs (t-1, t) to predict holding at t+1,
-    for a specific investor (mgrno) and stock (permno).
-    """
     df = df.copy()
-
-    # Filter to investor & stock
     df = df[(df["mgrno"] == mgrno) & (df["permno"] == permno)].copy()
 
+    # ★ 确保是 datetime，并按窗口裁剪（关键修复）
+    df["fdate"] = pd.to_datetime(df["fdate"], errors="coerce")
+    if start_date:
+        df = df[df["fdate"] >= pd.to_datetime(start_date)]
+    if end_date:
+        df = df[df["fdate"] <= pd.to_datetime(end_date)]
 
-    # Sort and deduplicate
+    # 排序去重
     df = df.sort_values("fdate").drop_duplicates(subset=["permno","mgrno","fdate"], keep="first")
 
-    # Check required columns
     needed_cols = ["permno","fdate","me","be","profit","Gat","beta","mgrno","holding"]
     missing = [c for c in needed_cols if c not in df.columns]
     if missing:
@@ -213,15 +212,16 @@ def generate_prompts_list(
     results = []
     df = df.reset_index(drop=True)
 
-    # Iterate using iloc so row_t / prev_row are Series (not dict)
     for i in tqdm(range(1, len(df)), desc="Generating M3 Prompts"):
         prev_row = df.iloc[i-1]  # t-1
         row_t    = df.iloc[i]    # t
 
         input_date  = row_t["fdate"]
-        target_date = pd.to_datetime(row_t["fdate"]) + pd.offsets.QuarterEnd(1)
+        target_date = pd.to_datetime(row_t["fdate"]) + pd.offsets.QuarterEnd(1)  # t+1 季末
 
-        prompt = build_single_prompt(
+        # 你这里用的是 build_single_prompt，但上面定义的是 build_prompt_m3；
+        # 如果没有别的别名，这里应该改成 build_prompt_m3：
+        prompt = build_prompt_m3(
             row_t=row_t,
             prev_row=prev_row,
             investor_role=investor_role,
@@ -235,8 +235,6 @@ def generate_prompts_list(
             "permno": permno,
             "prompt": prompt
         })
-
-    # print(f"[Info] Built {len(results)} prompts (with prev anchor) for mgrno={mgrno}, permno={permno}.")
     return results
 
 def parse_model_output_to_float(text):
@@ -441,7 +439,4 @@ if __name__ == "__main__":
         inv_type,
         plot=True
     )
-
-    print(eval_df.head(5))
-    print(metrics)
- 
+    

@@ -36,4 +36,6 @@ def get_openai_response(prompt):
 
 if __name__ == "__main__":
     prompt = input()
-    print(get_openai_response(prompt))
+    print(get_response(prompt))
+
+    
