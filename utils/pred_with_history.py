@@ -191,19 +191,20 @@ def generate_prompts_list(
     end_date: str = None,
     investor_role: str = None
 ):
+    """
+    Generate prompts for all available input pairs (t-1, t) to predict holding at t+1,
+    for a specific investor (mgrno) and stock (permno).
+    """
     df = df.copy()
+
+    # Filter to investor & stock
     df = df[(df["mgrno"] == mgrno) & (df["permno"] == permno)].copy()
 
-    # ★ 确保是 datetime，并按窗口裁剪（关键修复）
-    df["fdate"] = pd.to_datetime(df["fdate"], errors="coerce")
-    if start_date:
-        df = df[df["fdate"] >= pd.to_datetime(start_date)]
-    if end_date:
-        df = df[df["fdate"] <= pd.to_datetime(end_date)]
 
-    # 排序去重
+    # Sort and deduplicate
     df = df.sort_values("fdate").drop_duplicates(subset=["permno","mgrno","fdate"], keep="first")
 
+    # Check required columns
     needed_cols = ["permno","fdate","me","be","profit","Gat","beta","mgrno","holding"]
     missing = [c for c in needed_cols if c not in df.columns]
     if missing:
@@ -212,16 +213,18 @@ def generate_prompts_list(
     results = []
     df = df.reset_index(drop=True)
 
+    # Iterate using iloc so row_t / prev_row are Series (not dict)
     for i in tqdm(range(1, len(df)), desc="Generating M3 Prompts"):
         prev_row = df.iloc[i-1]  # t-1
         row_t    = df.iloc[i]    # t
 
         input_date  = row_t["fdate"]
-        target_date = pd.to_datetime(row_t["fdate"]) + pd.offsets.QuarterEnd(1)  # t+1 季末
+        fdate_t = pd.to_datetime(row_t["fdate"])
+        target_q = fdate_t.to_period("Q") + 1          # 明确 t+1
+        target_date = target_q.start_time              # 用季度起始日做标签（也可用 end_time，但要前后一致）
 
-        # 你这里用的是 build_single_prompt，但上面定义的是 build_prompt_m3；
-        # 如果没有别的别名，这里应该改成 build_prompt_m3：
-        prompt = build_prompt_m3(
+
+        prompt = build_single_prompt(
             row_t=row_t,
             prev_row=prev_row,
             investor_role=investor_role,
@@ -235,6 +238,8 @@ def generate_prompts_list(
             "permno": permno,
             "prompt": prompt
         })
+
+    # print(f"[Info] Built {len(results)} prompts (with prev anchor) for mgrno={mgrno}, permno={permno}.")
     return results
 
 def parse_model_output_to_float(text):
@@ -282,16 +287,37 @@ def get_ground_truth(df, mgrno, permno):
     df = df.groupby("target_date", as_index=False)["y_true"].sum()
     return df
 
+def parse_model_output_to_delta(text: str):
+    """
+    从模型JSON中读出增量：{"delta_holding": <float>}；失败返回 np.nan。
+    """
+    try:
+        obj = json.loads(text)
+        val = obj.get("delta_holding", None)
+        return float(val) if val is not None else np.nan
+    except Exception:
+        return np.nan
+    
+def build_prediction_df(preds_raw):
+    """
+    从 raw 模型输出构造 DataFrame。
+    这里解析 'delta_holding' 到列 y_delta。
+    """
+    df_pred = pd.DataFrame(preds_raw).copy()
+    df_pred["target_date"] = pd.to_datetime(df_pred["target_date"])
+    df_pred["y_delta"] = df_pred["model_json"].apply(parse_model_output_to_delta)
+    # 只保留所需列
+    return df_pred[["target_date", "y_delta"]]
+
+
 def evaluate_predictions(df, mgrno, permno, preds_raw, zero_eps=1e-9, plot=True):
     print("[Info] Building prediction DataFrame...")
     df_pred = build_prediction_df(preds_raw).copy()
-    df_pred["target_date"] = pd.to_datetime(df_pred["target_date"], errors="coerce")
-    df_pred["target_q"] = df_pred["target_date"].dt.to_period("Q")   # ★ 预测用季度标签
+    df_pred["target_q"] = pd.to_datetime(df_pred["target_date"], errors="coerce").dt.to_period("Q")
 
     print("[Info] Extracting ground truth...")
     df_true = get_ground_truth(df, mgrno=mgrno, permno=permno).copy()
-    df_true["target_date"] = pd.to_datetime(df_true["target_date"], errors="coerce")
-    df_true["target_q"] = df_true["target_date"].dt.to_period("Q")   # ★ 真值用季度标签
+    df_true["target_q"] = pd.to_datetime(df_true["target_date"], errors="coerce").dt.to_period("Q")
 
     print("[Info] Merging on target_q (quarter)...")
     eval_df = pd.merge(df_true, df_pred, on="target_q", how="inner").sort_values("target_q")
@@ -300,8 +326,20 @@ def evaluate_predictions(df, mgrno, permno, preds_raw, zero_eps=1e-9, plot=True)
         print("[Warn] No overlapping quarters after merge. Check your dates.")
         return eval_df, {"count": 0, "MAE": None, "RMSE": None, "MAPE_%": None}, None
 
-    eval_df["target_date"] = eval_df["target_q"].dt.asfreq("Q", "start").dt.to_timestamp()
+    # 用季度末(或起始)作为展示日期，保持一致
+    eval_df["target_date"] = eval_df["target_q"].dt.asfreq("Q", "end").dt.to_timestamp()
 
+    # anchor_t = 上一季的真实持仓（与 prompt 里的 holding_t 一致）
+    eval_df = eval_df.sort_values("target_q").reset_index(drop=True)
+    eval_df["anchor_t"] = eval_df["y_true"].shift(1)
+
+    # 预测水平 = max(0, anchor_t + y_delta)
+    eval_df["y_pred"] = np.maximum(0.0, eval_df["anchor_t"] + eval_df["y_delta"])
+
+    # 第一行没有 anchor，去掉
+    eval_df = eval_df.dropna(subset=["anchor_t"]).reset_index(drop=True)
+
+    # 误差
     eval_df["err"] = eval_df["y_pred"] - eval_df["y_true"]
     eval_df["abs_err"] = eval_df["err"].abs()
     eval_df["pct_err"] = eval_df["abs_err"] / (eval_df["y_true"].abs() + zero_eps)
@@ -316,8 +354,7 @@ def evaluate_predictions(df, mgrno, permno, preds_raw, zero_eps=1e-9, plot=True)
         fig, ax = plt.subplots(figsize=(8, 4.5))
         ax.plot(eval_df["target_date"], eval_df["y_true"], marker="o", label="Actual")
         ax.plot(eval_df["target_date"], eval_df["y_pred"], marker="o", label="Predicted")
-        ax.set_xlabel("Quarter")
-        ax.set_ylabel("Holding")
+        ax.set_xlabel("Quarter"); ax.set_ylabel("Holding")
         ax.set_title(f"Investor {mgrno} - Stock {permno}: Predicted vs Actual")
         ax.grid(True); ax.legend(); fig.tight_layout()
 
@@ -418,12 +455,12 @@ def pipeline(
 
 if __name__ == "__main__":
 
-    inv_type = "Banks"
+    inv_type = "banks"
     data_name = inv_type + ".json"
     df = json_data_to_df(data_name)
     mgrno = 7800
     permno = 10107
-    start_date = "2010-04-01"
+    start_date = "2010-07-01"
     end_date = "2019-07-01"
     call_fn = get_response
     investor_role = inv_type
@@ -439,4 +476,7 @@ if __name__ == "__main__":
         inv_type,
         plot=True
     )
-    
+
+    print(eval_df.head(5))
+    print(metrics)
+ 
