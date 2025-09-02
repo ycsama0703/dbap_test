@@ -142,5 +142,5 @@ if __name__ == "__main__":
     df = load_all_raw_parquet(raw_dir)
     
     ###Select the col that you will use.
-    cols = ['permno','fdate','type','me','be','profit','Gat','beta','holding','mgrno','mgrid','aum','weight','outaum','outweight'] 
+    cols = ['permno','fdate','type','me','be','profit','Gat','beta','holding','mgrno','aum','shares','prc'] 
     save_json_by_type(df, cols)
