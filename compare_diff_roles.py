@@ -5,6 +5,7 @@ from utils.pred_with_history import pipeline
 from utils.api import get_response
 from utils.io import json_data_to_df
 from zoneinfo import ZoneInfo
+from datetime import datetime
 
 import json
 import time
@@ -15,13 +16,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
-from pathlib import Path
+
 
 
 def pretty_role(s: str) -> str:
@@ -39,7 +37,7 @@ if __name__ == "__main__":
     ]
 
     
-    data_name = "Banks.json"
+    data_name = "households.json"
     df = json_data_to_df(data_name)
 
     

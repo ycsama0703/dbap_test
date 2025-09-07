@@ -51,16 +51,15 @@ def extract_json_object(text):
     return None
 
 
-def parse_model_json_to_float(json_str):
-    """Parse a json string like '{"holding_value": 12.3}' into a float.
-    Returns float('nan') if parsing fails.
-    """
+def parse_model_output_to_tp1(text: str):
+
     try:
-        obj = json.loads(json_str)
-        val = obj.get("holding_value", None)
-        return float(val) if val is not None else float("nan")
+        obj = json.loads(text)
+        val = obj.get("holding_tp1", None)
+        return float(val) if val is not None else np.nan
     except Exception:
-        return float("nan")
+        return np.nan
+
 
 def prompts_to_preds_raw(prompts, call_fn=get_response, max_retries=3, backoff=1.5, sleep_between=0.2):
     """Loop over prompts list and call the model to build preds_raw.
@@ -255,18 +254,12 @@ def parse_model_output_to_float(text):
         return np.nan
 
 def build_prediction_df(preds_raw):
-    """
-    Build a tidy DataFrame from raw model outputs.
-    Required keys in each dict: 'target_date', 'model_json'
-    """
+
     df_pred = pd.DataFrame(preds_raw).copy()
-    # ensure datetime
     df_pred["target_date"] = pd.to_datetime(df_pred["target_date"])
-    # parse JSON to float
-    df_pred["y_pred"] = df_pred["model_json"].apply(parse_model_output_to_float)
-    # keep only necessary
-    df_pred = df_pred[["target_date", "y_pred"]]
-    return df_pred
+    df_pred["y_pred"] = df_pred["model_json"].apply(parse_model_output_to_tp1)
+    return df_pred[["target_date", "y_pred"]]
+
 
 def get_ground_truth(df, mgrno, permno):
     """
@@ -297,17 +290,7 @@ def parse_model_output_to_delta(text: str):
         return float(val) if val is not None else np.nan
     except Exception:
         return np.nan
-    
-def build_prediction_df(preds_raw):
-    """
-    从 raw 模型输出构造 DataFrame。
-    这里解析 'delta_holding' 到列 y_delta。
-    """
-    df_pred = pd.DataFrame(preds_raw).copy()
-    df_pred["target_date"] = pd.to_datetime(df_pred["target_date"])
-    df_pred["y_delta"] = df_pred["model_json"].apply(parse_model_output_to_delta)
-    # 只保留所需列
-    return df_pred[["target_date", "y_delta"]]
+
 
 
 def evaluate_predictions(df, mgrno, permno, preds_raw, zero_eps=1e-9, plot=True):
@@ -326,20 +309,10 @@ def evaluate_predictions(df, mgrno, permno, preds_raw, zero_eps=1e-9, plot=True)
         print("[Warn] No overlapping quarters after merge. Check your dates.")
         return eval_df, {"count": 0, "MAE": None, "RMSE": None, "MAPE_%": None}, None
 
-    # 用季度末(或起始)作为展示日期，保持一致
     eval_df["target_date"] = eval_df["target_q"].dt.asfreq("Q", "end").dt.to_timestamp()
-
-    # anchor_t = 上一季的真实持仓（与 prompt 里的 holding_t 一致）
     eval_df = eval_df.sort_values("target_q").reset_index(drop=True)
-    eval_df["anchor_t"] = eval_df["y_true"].shift(1)
 
-    # 预测水平 = max(0, anchor_t + y_delta)
-    eval_df["y_pred"] = np.maximum(0.0, eval_df["anchor_t"] + eval_df["y_delta"])
-
-    # 第一行没有 anchor，去掉
-    eval_df = eval_df.dropna(subset=["anchor_t"]).reset_index(drop=True)
-
-    # 误差
+    # 计算误差
     eval_df["err"] = eval_df["y_pred"] - eval_df["y_true"]
     eval_df["abs_err"] = eval_df["err"].abs()
     eval_df["pct_err"] = eval_df["abs_err"] / (eval_df["y_true"].abs() + zero_eps)
