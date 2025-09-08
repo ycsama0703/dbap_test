@@ -120,10 +120,10 @@ agg, all_eval_df, mgr_list = predict_stock_all_investors(
     df=df,
     permno=10107,                  # 股票id
     start_date="2010-01-01",       # 起始时间
-    end_date="2012-10-01",         # 结束时间
+    end_date="2014-10-01",         # 结束时间
     call_fn=get_response,          # 你已有的API调用函数
     inv_type="banks",              # 投资人角色
-    max_mgr=3,                    # 可选：限制最多跑前10个投资人
+    max_mgr=5,                    # 可选：限制最多跑前10个投资人
     plot=True                      # 是否画总持仓对比图
 )
 
